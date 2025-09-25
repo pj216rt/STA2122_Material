@@ -8,54 +8,52 @@ p  <- 0.5
 B  <- 20000        
 ns <- c(10, 30, 100)
 
-#simulate X bar.  
-sim_Xbar <- function(n, p, B) {
-  xbar <- replicate(B, mean(rbinom(n, size = 1, prob = p)))
-  tibble(n = n, xbar = xbar)
+hist_df <- data.frame()
+for (n in ns) {
+
+  k  <- rbinom(B, size = n, prob = p)
+  xb <- k / n
+  
+  #put on grid, seelect bin width and scale for density
+  tb <- as.data.frame(table(xb), stringsAsFactors = FALSE)
+  tb$xb <- as.numeric(tb$xb)
+  bw <- 1 / n                     
+  tb$density <- tb$Freq / (sum(tb$Freq) * bw)  
+  
+  tb$n <- factor(n, levels = ns)
+  tb$width <- bw
+  hist_df <- rbind(hist_df, tb[, c("n", "xb", "density", "width")])
 }
 
-#data simulation
-df_Z    <- map_dfr(ns, sim_Z, p = p, B = B) %>% mutate(n = factor(n))
-df_Xbar <- map_dfr(ns, sim_Xbar, p = p, B = B) %>% mutate(n = factor(n))
 
-
-df_Z %>%
-  group_by(n) %>%
-  summarise(mean_Z = mean(z), sd_Z = sd(z))
-
-
-# ----------------------------
-# Figure 2: Unstandardized means Xbar_n vs N(p, p(1-p)/n)
-# ----------------------------
-# Overlay the corresponding normal density with mean = p and sd = sqrt(p(1-p)/n)
-normal_density_xbar <- function(x, n) {
-  dnorm(x, mean = p, sd = sqrt(p * (1 - p) / as.numeric(as.character(n))))
+#creating normal distribution
+curve_df <- data.frame()
+for (n in ns) {
+  x <- seq(0, 1, by = 0.001)
+  den <- dnorm(x, mean = p, sd = sqrt(p * (1 - p) / n))
+  tmp <- data.frame(n = factor(n, levels = ns), x = x, den = den)
+  curve_df <- rbind(curve_df, tmp)
 }
 
-g2 <- ggplot(df_Xbar, aes(x = xbar)) +
-  geom_histogram(aes(y = after_stat(density)), bins = 40, fill = "skyblue", alpha = 0.6) +
-  stat_function(
-    fun = function(xx) normal_density_xbar(xx, n = 10),
-    data = data.frame(n = factor("10", levels = levels(df_Xbar$n))),
-    linewidth = 1.1, color = "red"
+#plot of histograms overlaid with a smooth normal distribution
+g2 <- ggplot() +
+  geom_col(
+    data = hist_df,
+    aes(x = xb, y = density, width = width),
+    fill = "grey70", color = "white", alpha = 0.8, linewidth = 0.2
   ) +
-  stat_function(
-    fun = function(xx) normal_density_xbar(xx, n = 30),
-    data = data.frame(n = factor("30", levels = levels(df_Xbar$n))),
-    linewidth = 1.1, color = "red"
-  ) +
-  stat_function(
-    fun = function(xx) normal_density_xbar(xx, n = 100),
-    data = data.frame(n = factor("100", levels = levels(df_Xbar$n))),
-    linewidth = 1.1, color = "red"
+  geom_line(
+    data = curve_df,
+    aes(x = x, y = den),
+    color = "red", linewidth = 1.2
   ) +
   facet_wrap(~ n, nrow = 1, labeller = label_bquote(n == .(as.character(n)))) +
+  coord_cartesian(xlim = c(0, 1)) +
   labs(
     title = "CLT: Sample Means X̄_n",
     subtitle = bquote(bar(X)[n] ~ "vs." ~ N(.(p), .(p)*(1-.(p))/n) ~ "for coin flips"),
     x = expression(bar(X)[n]), y = "density"
   ) +
-  theme_minimal(base_size = 12) +
-  coord_cartesian(xlim = c(0, 1))   # <-- restrict x-axis to [0,1]
+  theme_minimal(base_size = 12)
 
 print(g2)
