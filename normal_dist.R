@@ -9,8 +9,8 @@ params <- data.frame(
 )
 
 #areas to find area between
-a <- 0.5
-b <- 1.5
+a <- -2
+b <- 2
 
 #dataframes for curves, shaded areas, areas
 curve_df <- data.frame()
@@ -18,51 +18,43 @@ shade_df <- data.frame()
 areas <- data.frame()
 
 for (i in seq_len(nrow(params))) {
-  mu    <- params$mu[i]
-  sig   <- params$sigma[i]
-  lab   <- params$label[i]
+  mu  <- params$mu[i]
+  sg  <- params$sigma[i]
+  lab <- params$label[i]
   
-  # x-range covering most mass for this distribution
-  x_min <- mu - 4*sig
-  x_max <- mu + 4*sig
+  # panel range that covers most mass
+  x_min <- mu - 4*sg
+  x_max <- mu + 4*sg
   x     <- seq(x_min, x_max, by = 0.001)
+  den   <- dnorm(x, mean = mu, sd = sg)
   
-  den <- dnorm(x, mean = mu, sd = sig)
+  curve_df <- rbind(curve_df, data.frame(label = lab, x = x, den = den))
   
-  # full curve for line
-  curve_df <- rbind(curve_df,
-                    data.frame(label = lab, x = x, den = den))
-  
-  # shaded region restricted to [a, b]
-  x_shade  <- x[x >= a & x <= b]
-  if (length(x_shade) > 1) {
-    shade_df <- rbind(shade_df,
-                      data.frame(label = lab,
-                                 x = x_shade,
-                                 den = dnorm(x_shade, mean = mu, sd = sig)))
+  # clip [a,b] to panel range so ribbon draws only when it overlaps
+  a_clip <- max(a, x_min)
+  b_clip <- min(b, x_max)
+  if (a_clip < b_clip) {
+    xs  <- seq(a_clip, b_clip, by = 0.001)
+    dns <- dnorm(xs, mean = mu, sd = sg)
+    shade_df <- rbind(shade_df, data.frame(label = lab, x = xs, den = dns))
   }
   
-  # analytic area under curve on [a, b]
-  area <- pnorm(b, mean = mu, sd = sig) - pnorm(a, mean = mu, sd = sig)
-  areas <- rbind(areas, data.frame(label = lab, mu = mu, sigma = sig, area = area))
+  areas <- rbind(areas, data.frame(
+    label = lab, mu = mu, sigma = sg,
+    area = pnorm(b, mu, sg) - pnorm(a, mu, sg)
+  ))
 }
 
-areas$lab_with_area <- sprintf("%s\nArea[a,b]=%.3f", areas$label, areas$area)
-
-curve_df$facet <- factor(curve_df$label,
-                         levels = areas$label,
-                         labels = areas$lab_with_area)
-shade_df$facet <- factor(shade_df$label,
-                         levels = areas$label,
-                         labels = areas$lab_with_area)
+areas$facet <- sprintf("%s\nArea[a,b]=%.3f", areas$label, areas$area)
+curve_df$facet <- factor(curve_df$label, levels = areas$label, labels = areas$facet)
+shade_df$facet <- factor(shade_df$label, levels = areas$label, labels = areas$facet)
 
 
 p <- ggplot() +
-  #shaded area under each curve on [a, b]
-  geom_area(data = shade_df, aes(x = x, y = den), alpha = 0.35) +
-  #density curve
-  geom_line(data = curve_df, aes(x = x, y = den), linewidth = 1.1) +
-  #vertical markers for a and b (draw across all facets)
+  geom_ribbon(data = shade_df, aes(x = x, ymin = 0, ymax = den), 
+              fill = "steelblue", alpha = 0.35) + 
+  geom_line(data = curve_df, aes(x = x, y = den),
+            linewidth = 1.1, color = "black") +
   geom_vline(xintercept = c(a, b), linetype = "dashed", linewidth = 0.5) +
   facet_wrap(~ facet, nrow = 1, scales = "free_x") +
   labs(
@@ -70,8 +62,8 @@ p <- ggplot() +
     subtitle = sprintf("Shaded probability P(%.2f ≤ X ≤ %.2f)", a, b),
     x = "x", y = "density"
   ) +
-  theme_minimal(base_size = 12)
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank())
 
 print(p)
-
 
